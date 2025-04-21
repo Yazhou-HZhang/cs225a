@@ -5,6 +5,8 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <fstream>
+
 
 // sai main libraries includes
 #include "SaiModel.h"
@@ -27,6 +29,17 @@ using namespace Eigen;
 
 // config file names and object names
 const string robot_file = "${CS225A_URDF_FOLDER}/panda/panda_arm_controller.urdf";
+
+// Function to log joint trajectories
+void logJointTrajectory(std::ofstream &log_file, double time, const VectorXd &q) {
+
+    log_file << time;
+    for (int i = 0; i < q.size(); ++i) {
+        log_file << "," << q(i);
+    }
+    log_file << std::endl;
+}
+
 
 int main(int argc, char** argv) {
     SaiModel::URDF_FOLDERS["CS225A_URDF_FOLDER"] = string(CS225A_URDF_FOLDER);
@@ -102,6 +115,16 @@ int main(int argc, char** argv) {
     const double control_freq = 1000;
     SaiCommon::LoopTimer timer(control_freq);
 
+    std::string filename = "joint_trajectory_q" + std::to_string(controller_number) + ".csv";
+    
+    std::ofstream log_file(filename);
+
+    log_file << "time";
+    for (int i = 0; i < dof; ++i) {
+        log_file << ",q" << i + 1;
+    }
+    log_file << std::endl;
+
     while (runloop) {
         // wait for next scheduled loop
         timer.waitForNextLoop();
@@ -120,36 +143,76 @@ int main(int argc, char** argv) {
         // ---------------------------  question 1 ---------------------------------------
         if(controller_number == 1) {
 
-            double kp = 0.0;      // chose your p gain
-            double kv = 0.0;      // chose your d gain
+            double kp = 400.0;      // chose your p gain
+            double kv = 50.0;     // chose your d gain
 
             VectorXd q_desired = initial_q;   // change to the desired robot joint angles for the question
+            q_desired << M_PI / 2, -M_PI / 4, 0.0, -125.0 * M_PI / 180.0, 0.0, 80.0 * M_PI / 180.0, 0.0; 
 
-            control_torques.setZero();  // change to the control torques you compute
+            control_torques = -kp * (robot_q - q_desired) - kv * robot_dq;  // change to the control torques you compute
         }
 
         // ---------------------------  question 2 ---------------------------------------
         else if(controller_number == 2) {
 
-            control_torques.setZero();
+            double kp = 400.0;      // chose your p gain
+            double kv = 50.0;      // chose your d gain
+
+            VectorXd q_desired = initial_q;   // change to the desired robot joint angles for the question
+            q_desired << M_PI / 2, -M_PI / 4, 0.0, -125.0 * M_PI / 180.0, 0.0, 80.0 * M_PI / 180.0, 0.0; 
+
+            control_torques = -kp * (robot_q - q_desired) - kv * robot_dq + robot->jointGravityVector();
+            
         }
 
         // ---------------------------  question 3 ---------------------------------------
         else if(controller_number == 3) {
 
-            control_torques.setZero();
+            double kp = 400;      // chose your p gain
+            double kv = 38.0;     // chose your d gain
+
+            VectorXd q_desired = initial_q;   // change to the desired robot joint angles for the question
+            q_desired << M_PI / 2, -M_PI / 4, 0.0, -125.0 * M_PI / 180.0, 0.0, 80.0 * M_PI / 180.0, 0.0; 
+
+            control_torques = robot->M() * (-kp * (robot_q - q_desired) - kv * robot_dq) + robot->jointGravityVector();
+
+
         }
 
         // ---------------------------  question 4 ---------------------------------------
         else if(controller_number == 4) {
 
-            control_torques.setZero();
+            double kp = 400.0;
+            double kv = 38.0;  // critical damping for joint 0
+
+            VectorXd q_desired = initial_q;   // change to the desired robot joint angles for the question
+            q_desired << M_PI / 2, -M_PI / 4, 0.0, -125.0 * M_PI / 180.0, 0.0, 80.0 * M_PI / 180.0, 0.0; 
+
+            control_torques = robot->M() * (-kp * (robot_q - q_desired) - kv * robot_dq) + robot->coriolisForce() + robot->jointGravityVector();
+
         }
 
         // ---------------------------  question 5 ---------------------------------------
         else if(controller_number == 5) {
 
-            control_torques.setZero();
+            double kp = 400.0;
+            double kv = 38.0;  // critical damping for joint 0
+
+            VectorXd q_desired = initial_q;   // change to the desired robot joint angles for the question
+            q_desired << M_PI / 2, -M_PI / 4, 0.0, -125.0 * M_PI / 180.0, 0.0, 80.0 * M_PI / 180.0, 0.0; 
+
+            // MatrixXd J_payload = robot->Jv("link7");
+            // double payload_mass = 2.5;
+            // MatrixXd M_payload = payload_mass * J_payload.transpose() * J_payload;
+            // MatrixXd M_augmented = robot->M() + M_payload;
+
+            control_torques = M_augmented * (-kp * (robot_q - q_desired) - kv * robot_dq) + robot->coriolisForce() + robot->jointGravityVector();
+
+            // === Q6 Payload Compensation ===
+            // Vector3d g_vector(0, 0, -9.81);
+            // VectorXd tau_payload = J_payload.transpose() * (payload_mass * g_vector);
+            // control_torques += tau_payload;
+
         }
 
         // **********************
@@ -159,6 +222,7 @@ int main(int argc, char** argv) {
         // send to redis
         redis_client.setInt("sai::simviz::gravity_comp_enabled", 0);
         redis_client.sendAllFromGroup();
+        logJointTrajectory(log_file, time, robot_q);
     }
 
     control_torques.setZero();
@@ -168,5 +232,6 @@ int main(int argc, char** argv) {
     cout << "\nControl loop timer stats:\n";
     timer.printInfoPostRun();
 
+    log_file.close();
     return 0;
 }
