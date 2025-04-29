@@ -32,7 +32,6 @@ const string robot_file = "${CS225A_URDF_FOLDER}/panda/panda_arm_controller.urdf
 
 // Function to log joint trajectories
 void logJointTrajectory(std::ofstream &log_file, double time, const VectorXd &q) {
-
     log_file << time;
     for (int i = 0; i < q.size(); ++i) {
         log_file << "," << q(i);
@@ -115,10 +114,9 @@ int main(int argc, char** argv) {
     const double control_freq = 1000;
     SaiCommon::LoopTimer timer(control_freq);
 
+    // Setup Log File
     std::string filename = "joint_trajectory_q" + std::to_string(controller_number) + ".csv";
-    
     std::ofstream log_file(filename);
-
     log_file << "time";
     for (int i = 0; i < dof; ++i) {
         log_file << ",q" << i + 1;
@@ -201,12 +199,14 @@ int main(int argc, char** argv) {
             VectorXd q_desired = initial_q;   // change to the desired robot joint angles for the question
             q_desired << M_PI / 2, -M_PI / 4, 0.0, -125.0 * M_PI / 180.0, 0.0, 80.0 * M_PI / 180.0, 0.0; 
 
+            control_torques = robot->M() * (-kp * (robot_q - q_desired) - kv * robot_dq) + robot->coriolisForce() + robot->jointGravityVector();
+
             // MatrixXd J_payload = robot->Jv("link7");
             // double payload_mass = 2.5;
             // MatrixXd M_payload = payload_mass * J_payload.transpose() * J_payload;
             // MatrixXd M_augmented = robot->M() + M_payload;
 
-            control_torques = M_augmented * (-kp * (robot_q - q_desired) - kv * robot_dq) + robot->coriolisForce() + robot->jointGravityVector();
+            // control_torques = M_augmented * (-kp * (robot_q - q_desired) - kv * robot_dq) + robot->coriolisForce() + robot->jointGravityVector();
 
             // === Q6 Payload Compensation ===
             // Vector3d g_vector(0, 0, -9.81);
